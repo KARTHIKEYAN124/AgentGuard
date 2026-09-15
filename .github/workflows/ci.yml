@@ -1,0 +1,34 @@
+name: AgentGuard checks
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  evaluate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: uv sync --frozen --group dev
+      - run: uv run ruff check .
+      - run: uv run pytest -q
+      - run: npm ci && npm run build
+        working-directory: frontend
+      - run: npx playwright install --with-deps chromium
+        working-directory: frontend
+      - run: npm run test:e2e
+        working-directory: frontend
+      - run: uv run python -m agentguard.cli demo
+      - name: Evaluate release gate
+        run: uv run python -m agentguard.cli suite --agent customer-support:v1 --dataset support-gold:v1 --output data/ci-report.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: evaluation-report
+          path: data/ci-report.json
