@@ -32,6 +32,32 @@ def demo(guard):
     return guard
 
 
+@pytest.mark.parametrize(
+    "question",
+    [
+        "Can I return an used item?",
+        "Can I return a used item?",
+        "Can I return an item that is not unused?",
+    ],
+)
+def test_demo_does_not_infer_used_item_eligibility(demo, question):
+    run = demo.execute_agent(question, "customer-support:v2")
+    assert run["status"] == "success"
+    assert run["output"] == (
+        "The supplied policy covers unused items. "
+        "I cannot determine whether a used item is eligible for return from this evidence."
+    )
+    unused = demo.execute_agent("Can I return an unused item?", "customer-support:v2")
+    assert unused["output"] == "You can return an unused item within 30 days of delivery."
+
+
+def test_lexical_match_is_not_question_relevance():
+    policy = "You can return an unused item within 30 days of delivery."
+    result = evaluate_faithfulness(policy, [policy])
+    assert result["score"] == 1
+    assert "does not establish answer correctness or relevance" in result["warning"]
+
+
 def test_immutable_agent_and_prompt_versions(guard):
     p = guard.prompt_version("test", "v1", "Use evidence")
     a = guard.register_agent("support", "v1", prompt_id=p["id"])

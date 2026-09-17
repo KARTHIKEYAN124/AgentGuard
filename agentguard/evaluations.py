@@ -61,7 +61,7 @@ def evaluate_faithfulness(answer: str, sources: list[str]) -> dict:
         "score": sum(scores) / len(scores),
         "method": "lexical_overlap",
         "unsupported_claims": [c for c, s in zip(claims, scores, strict=True) if s < 0.6],
-        "warning": "Token overlap is not proof of support and cannot detect negation or factual contradictions.",
+        "warning": "Token overlap is not proof of support and cannot detect negation or factual contradictions. A score of 1 does not establish answer correctness or relevance to the question.",
     }
 
 

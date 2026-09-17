@@ -38,6 +38,8 @@ test("workspace to trace, regression report, experiment, and responsive dashboar
   await expect(
     page.getByRole("heading", { name: "Execution timeline" }),
   ).toBeVisible();
+  await expect(page.getByText("Execution status reports", { exact: false })).toBeVisible();
+  await expect(page.getByText("Lexical screening measures", { exact: false })).toBeVisible();
   await expect(
     page.getByText(
       "You can return an unused item within 30 days of delivery.",

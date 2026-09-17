@@ -16,6 +16,9 @@ export function TraceDetail({ run, onClose }) {
           {run.usage_estimated ? " (estimated)" : ""}
         </span>
       </div>
+      <p className="muted">
+        Execution status reports whether the run completed, not whether its answer is correct.
+      </p>
       {run.error && <p className="error">{run.error}</p>}
       <div className="io-grid">
         <section>
@@ -60,6 +63,13 @@ export function TraceDetail({ run, onClose }) {
         </>
       )}
       <h3>Evaluations</h3>
+      {run.evaluation?.faithfulness?.method === "lexical_overlap" && (
+        <p className="muted">
+          Lexical screening measures word overlap with sources. Even a score of 1
+          does not verify correctness, relevance, or whether the answer addresses
+          this question. Use gold test cases or a calibrated LLM judge to assess answer quality.
+        </p>
+      )}
       <Json value={run.evaluation} />
     </Modal>
   );

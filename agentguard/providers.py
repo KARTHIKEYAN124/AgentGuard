@@ -314,6 +314,17 @@ class ProviderClient:
             )
             docs = json.loads(evidence)
             output = docs[0]["text"] if docs else "I do not know based on the supplied evidence."
+            # This offline fixture cannot infer eligibility for used items from
+            # a policy about unused items. Do not imply either approval or denial.
+            if (
+                re.search(r"\breturn\b", user, re.I)
+                and re.search(r"\bused\b|\bnot\s+unused\b", user, re.I)
+                and re.search(r"\bunused\b", output, re.I)
+            ):
+                output = (
+                    "The supplied policy covers unused items. "
+                    "I cannot determine whether a used item is eligible for return from this evidence."
+                )
         # Deterministic fixture: token counts are estimates, never provider usage.
         return Completion(
             output,
