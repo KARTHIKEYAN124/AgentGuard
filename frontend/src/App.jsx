@@ -13,7 +13,7 @@ import {
   X,
 } from "lucide-react";
 import { api, date, percent } from "./api";
-import { Empty, Field, Json, Modal, Status, TraceTable } from "./components";
+import { Empty, Json, Modal, Status, TraceTable } from "./components";
 import Overview from "./Overview";
 import {
   ExecuteForm,
@@ -60,15 +60,39 @@ const datasetTemplate = {
   ],
 };
 
-export default function App() {
+export default function App({
+  access,
+  onLogin,
+  onSettings,
+  onWorkspaceChange,
+  onLogout,
+}) {
   const [page, setPage] = useState("Overview");
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const [modal, setModal] = useState(null);
+  const [modal, assignModal] = useState(null);
   const [mobile, setMobile] = useState(false);
   const [filter, setFilter] = useState("");
   const [status, setStatus] = useState("all");
+  const canEdit = !access.isDemo && ["owner", "editor"].includes(access.role);
+  function setModal(value) {
+    if (
+      value &&
+      ["execute", "suite", "json", "experiment"].includes(value.type) &&
+      !canEdit
+    ) {
+      if (!access.user) onLogin();
+      else if (access.isDemo)
+        onWorkspaceChange(access.workspaces[0]?.id || "demo");
+      else
+        setError(
+          "Your viewer role is read-only. Ask an owner for editor access.",
+        );
+      return;
+    }
+    assignModal(value);
+  }
   const refresh = useCallback(async () => {
     setBusy(true);
     try {
@@ -105,6 +129,11 @@ export default function App() {
   const run = () => setModal({ type: "execute" });
   const suite = () => setModal({ type: "suite" });
   const seed = async () => {
+    if (!canEdit) {
+      if (!access.user) onLogin();
+      else setError("Switch to an editable workspace first.");
+      return;
+    }
     setBusy(true);
     try {
       await api("demo", {});
@@ -144,7 +173,27 @@ export default function App() {
         <div className="workspace">
           <span className="workspace-avatar">AG</span>
           <div>
-            Local workspace<small>Agent engineering</small>
+            {access.user ? (
+              <select
+                aria-label="Active workspace"
+                value={access.workspaceId}
+                onChange={(e) => onWorkspaceChange(e.target.value)}
+              >
+                <option value="demo">Public demo</option>
+                {access.workspaces.map((w) => (
+                  <option value={w.id} key={w.id}>
+                    {w.name}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              "Public demo"
+            )}
+            <small>
+              {access.isDemo
+                ? "Read-only sample workspace"
+                : `${access.role} · Private workspace`}
+            </small>
           </div>
         </div>
         <nav aria-label="Main navigation">
@@ -172,13 +221,14 @@ export default function App() {
               Catch regressions before release.
             </p>
           </div>
-          <button onClick={() => setModal({ type: "auth" })}>
-            <KeyRound size={16} /> Workspace access
+          <button onClick={access.user ? onSettings : onLogin}>
+            <KeyRound size={16} />{" "}
+            {access.user ? "Workspace & account" : "Sign in / Create account"}
           </button>
           <a href="/docs" target="_blank" rel="noreferrer">
             API documentation ↗
           </a>
-          <small>AgentGuard / v0.1.0</small>
+          <small>AgentGuard / v0.2.0</small>
         </div>
       </aside>
       <div className="main-shell">
@@ -198,7 +248,11 @@ export default function App() {
           <div>
             <span className="connection">
               <span className={`dot ${error ? "offline" : ""}`} />
-              {error ? "Connection issue" : "Local workspace"}
+              {error
+                ? "Connection issue"
+                : access.isDemo
+                  ? "Public demo"
+                  : "Private workspace"}
             </span>
             <button
               className="icon"
@@ -208,6 +262,12 @@ export default function App() {
             >
               <RefreshCw size={16} className={busy ? "spin" : ""} />
             </button>
+            <button
+              className="account-action"
+              onClick={access.user ? onLogout : onLogin}
+            >
+              {access.user ? "Sign out" : "Sign in"}
+            </button>
           </div>
         </header>
         <main>
@@ -216,11 +276,36 @@ export default function App() {
               {error}{" "}
               <button
                 className="text-button"
-                onClick={() => setModal({ type: "auth" })}
+                onClick={access.user ? onSettings : onLogin}
               >
-                Configure access
+                {access.user ? "Workspace settings" : "Sign in"}
               </button>
             </div>
+          )}
+          {access.isDemo && (
+            <div className="public-banner">
+              <div>
+                <strong>Explore AgentGuard</strong>
+                <p>
+                  This read-only demo uses sample agents and real deterministic
+                  evaluation runs. Your own workspace stays private.
+                </p>
+              </div>
+              <button
+                className="primary"
+                onClick={access.user ? onSettings : onLogin}
+              >
+                {access.user
+                  ? "Manage your workspaces"
+                  : "Create your workspace"}
+              </button>
+            </div>
+          )}
+          {!access.isDemo && access.role === "viewer" && (
+            <p className="demo-note viewer-note">
+              Viewer access · You can inspect and export results. An owner can
+              grant editing access.
+            </p>
           )}
           {page === "Overview" && (
             <Overview
@@ -657,29 +742,6 @@ export default function App() {
       )}
       {modal?.type === "experiment-results" && (
         <ExperimentDetail value={modal.value} onClose={close} />
-      )}
-      {modal?.type === "auth" && (
-        <Modal title="Workspace access" onClose={close}>
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              const token = new FormData(e.target).get("token");
-              if (token) sessionStorage.setItem("agentguard-token", token);
-              else sessionStorage.removeItem("agentguard-token");
-              created();
-            }}
-          >
-            <Field
-              label="Workspace API token"
-              hint="Only needed if AGENTGUARD_API_TOKEN is configured on the server. Stored for this browser tab."
-            >
-              <input name="token" type="password" autoComplete="off" />
-            </Field>
-            <div className="modal-actions">
-              <button className="primary">Apply</button>
-            </div>
-          </form>
-        </Modal>
       )}
     </div>
   );

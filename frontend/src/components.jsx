@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { Children, cloneElement, useEffect, useId, useRef } from "react";
 import { X, ArrowUpRight, CircleCheck, CircleAlert } from "lucide-react";
 import { date, latency, money } from "./api";
 
@@ -19,11 +19,15 @@ export function Json({ value }) {
   return <pre className="json">{JSON.stringify(value, null, 2)}</pre>;
 }
 export function Field({ label, children, hint }) {
+  const id = useId();
   return (
     <label className="field">
-      <span>{label}</span>
-      {children}
-      {hint && <small>{hint}</small>}
+      <span id={`${id}-label`}>{label}</span>
+      {Children.map(children, child => ["input", "select", "textarea"].includes(child?.type) ? cloneElement(child, {
+        "aria-labelledby": `${id}-label`,
+        "aria-describedby": hint ? `${id}-hint` : undefined,
+      }) : child)}
+      {hint && <small id={`${id}-hint`}>{hint}</small>}
     </label>
   );
 }

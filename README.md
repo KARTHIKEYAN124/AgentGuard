@@ -2,9 +2,21 @@
 
 CI/CD for AI agents: register immutable versions, execute and trace them, evaluate gold datasets, and fail a release when quality, cost, or latency regresses.
 
-**Hosted app:** https://agentguard-production-2392.up.railway.app — open **Workspace access** and use the application token from the ignored local `.env.production` file. See [deployment details](docs/deployment.md).
+**Hosted app:** https://agentguard-production-2392.up.railway.app - explore the public read-only demo, or create an email/password account for a private workspace. See [deployment details](docs/deployment.md).
 
-This repository is a runnable **single-workspace reference implementation**, with real provider adapters and a deterministic offline provider. It is not a claim of production readiness at arbitrary scale. No provider credentials are included.
+This repository is a runnable multi-workspace reference implementation with real provider adapters and a deterministic offline provider. No provider credentials are included.
+
+## Accounts and sharing
+
+- Visitors can inspect sample traces and evaluations without an account.
+- Sign up to get a private workspace with separate agent, trace, prompt, and evaluation storage.
+- Open **Workspace & account** to create workspaces, invite teammates, change passwords, and view usage.
+- Owners manage membership and limits; editors can run and modify agents; viewers have read-only access.
+- Invitations are single-use links intended for a specific email address and expire after seven days. Share links privately; the app does not send invitation emails.
+- Default daily allowances are 100 runs, 500 model calls, and $1 of reserved model budget. Live AI requires operator approval. Owners can lower limits; operators can raise them.
+- Existing installation owners can sign up, then open **Workspace & account - Your account - Connect your original token-based workspace**, using the original `AGENTGUARD_API_TOKEN` from the ignored `.env.production` file. This grants access to preserved data and operator controls. Never share this token with visitors.
+
+Authentication uses email/password, salted scrypt hashes, and expiring HttpOnly sessions. Google OAuth, email verification, and forgotten-password email recovery are not implemented. Keep passwords in a password manager.
 
 ## Run locally
 
@@ -23,7 +35,7 @@ Open **http://127.0.0.1:8000**. Interactive API docs: **http://127.0.0.1:8000/do
 
 For hosting on a real server, see [Server deployment](docs/deployment.md). A multi-stage `Dockerfile` and Railway health-check configuration are included; persistent `/data` storage and a workspace API token are required.
 
-1. Click **Load demo workspace**. This creates two agent versions, two prompt versions, and five gold cases. It does not fabricate metrics.
+1. Create an account, then click **Load demo workspace**. This creates two agent versions, two prompt versions, and five gold cases. It does not fabricate metrics.
 2. Click **Execute agent** to inspect an input/output, routing decisions, retrieval, model calls, tools, memory, evaluations, and nested spans.
 3. Click **Run evaluation** to create a baseline, then run the candidate with that suite selected under **Compare against**.
 4. Create an **Experiment**, choose it in **Execute agent**, and supply a stable subject ID. Inspect the per-variant results.
@@ -134,7 +146,7 @@ Only metadata (run ID, span name, status, model, provider, token usage, and know
 
 ## Operational boundaries
 
-- Default binding is loopback. Remote access requires `AGENTGUARD_API_TOKEN`; send `Authorization: Bearer …` or enter it under **Workspace access**. Keep behind TLS in deployment. This is single-workspace authorization, not multi-tenant RBAC.
+- Default binding is loopback. Hosting requires `AGENTGUARD_API_TOKEN` for legacy API access and operator migration. Browser users authenticate with session cookies and select a private workspace using `X-Workspace-Id`. Public sample reads use `X-AgentGuard-Demo: true`; mutations are rejected. Set `AGENTGUARD_PUBLIC_URL` to the HTTPS origin for Secure cookies and origin checks.
 - SQLite uses WAL, transactional writes, immutable definition IDs, and parameterized queries. Back up the database and its WAL consistently. For multi-replica/high-volume workloads, migrate to Postgres and a durable worker queue.
 - Suite execution is synchronous in a FastAPI thread worker or CLI. Progress is persisted case by case, but process interruption is not automatically resumed. In CI, rerun interrupted suites; a `running` suite cannot be a baseline.
 - The server stores raw evaluation inputs, outputs, and session memory. Use synthetic/approved data, access controls and retention appropriate to your environment. Session history is capped at ten exchanges. Concurrent requests in the same session do not guarantee ordering.
@@ -153,3 +165,9 @@ npm run test:e2e
 ```
 
 The browser tests use an isolated temporary database and start a server on port 8011. They cover setup, execution, trace inspection, evaluation, report export, experiments, and mobile overflow. Backend tests cover schema strictness, metric boundaries, provider protocols, outages, memory isolation, immutable versions, bad tools, concurrent writes, baseline compatibility, API authorization, and CI failure codes.
+
+### Live AI spending controls
+
+For hosted workspace APIs, configure provider secrets and an operator-owned `AGENTGUARD_MODEL_PRICES` JSON catalog, keyed by `provider/model`, with `input_per_million` and `output_per_million` USD rates. Enable live access per workspace under operator controls. User-supplied model rates must match the catalog.
+
+Model calls reserve a conservative token budget before execution. Failed calls also consume reservations; this is a spending guard, not a billing invoice. The Python SDK and CLI are trusted local interfaces and do not apply workspace quotas. All workspace SQLite files, the accounts database, and the public sample database reside under the persistent data directory; back up the entire directory consistently. Single-replica deployment remains required.

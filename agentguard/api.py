@@ -1,6 +1,6 @@
 import os
-import secrets
 from contextlib import asynccontextmanager
+from contextvars import ContextVar
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
@@ -9,6 +9,8 @@ from fastapi.staticfiles import StaticFiles
 from jsonschema.exceptions import SchemaError
 from pydantic import Field
 
+from .accounts import Accounts, is_operator_token
+from .auth_api import COOKIE, install_auth
 from .demo import seed_demo
 from .evaluations import detect_regression, evaluate_faithfulness, evaluate_retrieval, evaluate_schema
 from .models import (
@@ -25,6 +27,7 @@ from .models import (
 )
 from .providers import ProviderError
 from .service import AgentGuard
+from .tenancy import WorkspaceGuard
 from .tracing import configure_telemetry
 
 
@@ -56,7 +59,20 @@ class RunJudgeRequest(Record):
 
 
 def create_app(db_path=None, provider=None):
-    guard = AgentGuard(db_path or os.getenv("AGENTGUARD_DB", "data/agentguard.db"), provider)
+    path = db_path or os.getenv("AGENTGUARD_DB", "data/agentguard.db")
+    accounts = Accounts(path)
+    legacy_guard = AgentGuard(path, provider)
+    demo_guard = AgentGuard(str(Path(path).parent / "public-demo.db"))
+    seed_demo(demo_guard)
+    if not demo_guard.store.list("suites", 1):
+        demo_guard.run_regression_suite("customer-support:v1", "support-gold:v1")
+    selected_guard = ContextVar("workspace_guard")
+
+    class ScopedGuard:
+        def __getattr__(self, name):
+            return getattr(selected_guard.get(), name)
+
+    guard = ScopedGuard()
 
     @asynccontextmanager
     async def lifespan(app):
@@ -66,20 +82,47 @@ def create_app(db_path=None, provider=None):
 
     app = FastAPI(
         title="AgentGuard",
-        version="0.1.0",
-        description="Single-workspace agent evaluation and observability. Costs are USD estimates using configured rates.",
+        version="0.2.0",
+        description="Private agent workspaces, team roles, evaluation, and observability. Costs are USD estimates.",
         lifespan=lifespan,
     )
-    app.state.guard = guard
+    app.state.guard = legacy_guard
+    app.state.accounts = accounts
+    install_auth(app, accounts)
 
-    def authorize(request: Request):
-        token = os.getenv("AGENTGUARD_API_TOKEN")
-        if token:
-            supplied = request.headers.get("authorization", "")
-            if not secrets.compare_digest(supplied, "Bearer " + token):
+    async def authorize(request: Request):
+        requested_id = request.headers.get("x-workspace-id")
+        if request.headers.get("x-agentguard-demo") == "true":
+            if request.method != "GET":
+                raise HTTPException(
+                    403, "The public demo is read-only. Create an account to run your own agents."
+                )
+            current = demo_guard
+        elif request.headers.get("authorization"):
+            supplied = request.headers["authorization"]
+            if not supplied.startswith("Bearer ") or not is_operator_token(supplied[7:]):
                 raise HTTPException(401, "A valid workspace API token is required")
-        elif request.client and request.client.host not in ("127.0.0.1", "::1", "localhost", "testclient"):
-            raise HTTPException(403, "Configure AGENTGUARD_API_TOKEN before remote access")
+            if requested_id and requested_id != "legacy":
+                raise HTTPException(403, "The original token grants access only to the original workspace")
+            current = WorkspaceGuard(accounts, "legacy", provider)
+        else:
+            identity = accounts.user(request.cookies.get(COOKIE))
+            if not identity:
+                raise HTTPException(
+                    401, "Sign in to access your private workspace, or explore the public demo"
+                )
+            spaces = accounts.workspaces(identity["id"])
+            workspace_id = requested_id or (spaces[0]["id"] if spaces else "")
+            member = accounts.membership(workspace_id, identity["id"])
+            if request.method != "GET" and member["role"] == "viewer":
+                raise HTTPException(403, "Viewers have read-only access. Ask an owner for editor access.")
+            accounts.rate_limit("workspace-requests:" + workspace_id, 1000, 60)
+            current = WorkspaceGuard(accounts, workspace_id, provider)
+        binding = selected_guard.set(current)
+        try:
+            yield
+        finally:
+            selected_guard.reset(binding)
 
     @app.exception_handler(KeyError)
     async def not_found(request, exc):
@@ -118,10 +161,12 @@ def create_app(db_path=None, provider=None):
 
     @router.get("/providers")
     def providers():
+        workspace_id = getattr(guard, "workspace_id", None)
+        live_enabled = bool(workspace_id and accounts.workspace(workspace_id)["live_enabled"])
         return {
             "demo": True,
             **{
-                p: bool(os.getenv(key))
+                p: bool(os.getenv(key)) and live_enabled
                 for p, key in [
                     ("openai", "OPENAI_API_KEY"),
                     ("anthropic", "ANTHROPIC_API_KEY"),

@@ -1,14 +1,22 @@
 export async function api(path, body, method) {
   const token = sessionStorage.getItem("agentguard-token");
+  const workspace = sessionStorage.getItem("agentguard-workspace");
   const response = await fetch("/api/" + path, {
     method: method || (body === undefined ? "GET" : "POST"),
     headers: {
       "Content-Type": "application/json",
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(workspace === "demo"
+        ? { "X-AgentGuard-Demo": "true" }
+        : workspace
+          ? { "X-Workspace-Id": workspace }
+          : {}),
     },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
   const data = response.status === 204 ? null : await response.json();
+  if (response.status === 401 && !path.startsWith("auth/"))
+    window.dispatchEvent(new Event("agentguard-session-expired"));
   if (!response.ok)
     throw new Error(
       typeof data.detail === "string"
