@@ -22,6 +22,8 @@ export default defineConfig({
       AGENTGUARD_DB: resolve(tmpdir(), `agentguard-e2e-${randomUUID()}.db`),
       AGENTGUARD_API_TOKEN: "",
       AGENTGUARD_HOST: "127.0.0.1",
+      AGENTGUARD_PUBLIC_URL: "http://127.0.0.1:8011",
+      AGENTGUARD_OLLAMA_MODELS: "",
     },
   },
 });

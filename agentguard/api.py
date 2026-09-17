@@ -165,6 +165,7 @@ def create_app(db_path=None, provider=None):
         live_enabled = bool(workspace_id and accounts.workspace(workspace_id)["live_enabled"])
         return {
             "demo": True,
+            "ollama": bool(workspace_id and os.getenv("AGENTGUARD_OLLAMA_MODELS")),
             **{
                 p: bool(os.getenv(key)) and live_enabled
                 for p, key in [

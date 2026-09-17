@@ -26,7 +26,7 @@ class Completion:
 
 
 def cost_of(spec: ModelSpec, result: Completion):
-    if spec.provider == "demo":
+    if spec.provider in ("demo", "ollama"):
         return 0.0
     if not result.usage_known or spec.input_per_million is None or spec.output_per_million is None:
         return None
@@ -68,15 +68,26 @@ class ProviderClient:
     ) -> Completion:
         if spec.provider == "demo":
             return self._demo(messages, tools)
-        env = {"openai": "OPENAI_API_KEY", "anthropic": "ANTHROPIC_API_KEY", "gemini": "GEMINI_API_KEY"}[
-            spec.provider
-        ]
-        key = os.getenv(env)
+        local = spec.provider == "ollama"
+        if local and spec.model not in os.getenv("AGENTGUARD_OLLAMA_MODELS", "").split(","):
+            raise ProviderError("Ollama model is not enabled in AGENTGUARD_OLLAMA_MODELS")
+        env = (
+            {"openai": "OPENAI_API_KEY", "anthropic": "ANTHROPIC_API_KEY", "gemini": "GEMINI_API_KEY"}[
+                spec.provider
+            ]
+            if not local
+            else ""
+        )
+        key = "local" if local else os.getenv(env)
         if not key:
             raise ProviderError(f"{env} is not configured", retryable=True)
         schemas = [TOOL_SCHEMAS[t] for t in tools]
-        if spec.provider == "openai":
-            url = "https://api.openai.com/v1/chat/completions"
+        if spec.provider in ("openai", "ollama"):
+            url = (
+                "http://127.0.0.1:11434/v1/chat/completions"
+                if local
+                else "https://api.openai.com/v1/chat/completions"
+            )
             headers = {"Authorization": f"Bearer {key}"}
             converted = []
             for m in messages:
@@ -91,6 +102,9 @@ class ProviderClient:
                 "messages": converted,
                 "max_completion_tokens": max_tokens,
             }
+            if local:
+                body["max_tokens"] = body.pop("max_completion_tokens")
+                body["temperature"] = 0.2
             if schemas:
                 body["tools"] = [{"type": "function", "function": s} for s in schemas]
         elif spec.provider == "anthropic":
@@ -192,7 +206,9 @@ class ProviderClient:
                     }
                 ]
         try:
-            with httpx.Client(timeout=httpx.Timeout(60, connect=10), transport=self.transport) as client:
+            with httpx.Client(
+                timeout=httpx.Timeout(300 if local else 60, connect=10), transport=self.transport
+            ) as client:
                 response = client.post(url, headers=headers, json=body)
         except httpx.TransportError as exc:
             raise ProviderError(f"{spec.provider} transport failure", retryable=True) from exc
@@ -204,9 +220,9 @@ class ProviderClient:
             )
         try:
             data = response.json()
-            if spec.provider == "openai":
+            if spec.provider in ("openai", "ollama"):
                 if data["choices"][0].get("finish_reason") in ("length", "content_filter"):
-                    raise ProviderError("openai output was truncated or filtered")
+                    raise ProviderError(f"{spec.provider} output was truncated or filtered")
                 message = data["choices"][0]["message"]
                 usage = data.get("usage") or {}
                 return Completion(

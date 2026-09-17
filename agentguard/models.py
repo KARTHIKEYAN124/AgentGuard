@@ -8,7 +8,7 @@ class Record(BaseModel):
 
 
 class ModelSpec(Record):
-    provider: Literal["demo", "openai", "anthropic", "gemini"] = "demo"
+    provider: Literal["demo", "openai", "anthropic", "gemini", "ollama"] = "demo"
     model: str = Field(default="demo-grounded", min_length=1, max_length=150)
     input_per_million: float | None = Field(default=None, ge=0, allow_inf_nan=False)
     output_per_million: float | None = Field(default=None, ge=0, allow_inf_nan=False)

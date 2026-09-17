@@ -14,7 +14,7 @@ class BudgetedProvider:
         self.provider = provider or ProviderClient()
 
     def complete(self, spec, messages, tools, max_tokens=1024):
-        live = spec.provider != "demo"
+        live = spec.provider not in ("demo", "ollama")
         cost = 0.0
         if live:
             catalog = json.loads(os.getenv("AGENTGUARD_MODEL_PRICES", "{}"))

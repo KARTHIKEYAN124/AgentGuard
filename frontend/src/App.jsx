@@ -327,7 +327,15 @@ export default function App({
                     type: "json",
                     title: "Register agent",
                     endpoint: "agents",
-                    initial: agentTemplate,
+                    initial: data?.providers?.ollama ? {
+                      ...agentTemplate,
+                      name: "local-assistant",
+                      model: { provider: "ollama", model: "qwen2.5:1.5b" },
+                      system_prompt: "Answer the user's question directly and concisely. Admit uncertainty. Do not invent company policies. When supplied evidence exists, use it for company-specific answers.",
+                      documents: [],
+                      retrieval: false,
+                      memory: true,
+                    } : agentTemplate,
                   }),
                 "Register agent",
               )}

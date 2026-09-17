@@ -20,6 +20,29 @@ Authentication uses email/password, salted scrypt hashes, and expiring HttpOnly 
 
 ## Run locally
 
+### Free local generation with Ollama
+
+Install [Ollama](https://ollama.com/download), then run `ollama pull qwen2.5:1.5b`.
+Add `AGENTGUARD_OLLAMA_MODELS=qwen2.5:1.5b` to your ignored `.env.local` file.
+Keep Ollama running on its default loopback port 11434 and start AgentGuard with
+`uv run python main.py`. Open http://127.0.0.1:8000, create an account, and choose
+**Agents → Register agent**. When local Ollama is enabled, the form defaults to a
+`local-assistant` using that model, with general question answering and no fixture
+documents. Register it, then select it in **Execute agent**.
+
+For business-specific answers, add your actual documents and enable `retrieval` in
+the agent definition. Create a new version when changing an existing definition.
+Small local models can make mistakes; evaluate them against your own gold cases.
+
+There are no provider API fees. The computer supplies RAM, CPU, and electricity,
+and must remain running. Trace costs for Ollama are zero API cost, excluding those
+operating costs. Local calls retain workspace run/call quotas. Only model names
+explicitly enabled by `AGENTGUARD_OLLAMA_MODELS` (comma-separated) may be called;
+the adapter connects only to `127.0.0.1:11434` and allows 300 seconds per request.
+Provider readiness means configured, not that the Ollama server is healthy.
+The Railway deployment cannot reach Ollama on your personal computer. Do not
+expose Ollama's unauthenticated port to the internet.
+
 Requirements: Python 3.11+, [uv](https://docs.astral.sh/uv/), and Node.js 20.19+ or 22.12+.
 
 ```powershell

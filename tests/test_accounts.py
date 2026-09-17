@@ -17,6 +17,26 @@ from agentguard.tenancy import BudgetedProvider
 PASSWORD = "correct horse battery staple"
 
 
+def test_local_inference_uses_call_quota_without_paid_provider_approval(app):
+    _, _, workspace = signup(app, "local-model@example.com")
+
+    class LocalProvider:
+        def complete(self, *args):
+            return Completion("Generated locally", input_tokens=5, output_tokens=3)
+
+    accounts = app.state.accounts
+    provider = BudgetedProvider(accounts, workspace["id"], LocalProvider())
+    spec = ModelSpec(provider="ollama", model="qwen2.5:1.5b")
+    assert provider.complete(spec, [], []).text == "Generated locally"
+    assert accounts.usage(workspace["id"])["calls"] == 1
+    assert accounts.usage(workspace["id"])["reserved_cost"] == 0
+    accounts.set_limits(workspace["id"], 100, 1, 1)
+    from agentguard.providers import ProviderError
+
+    with pytest.raises(ProviderError, match="daily usage limit"):
+        provider.complete(spec, [], [])
+
+
 def test_existing_database_backed_up_before_account_migration(tmp_path):
     path = tmp_path / "original.db"
     with sqlite3.connect(path) as db:

@@ -58,6 +58,39 @@ def test_lexical_match_is_not_question_relevance():
     assert "does not establish answer correctness or relevance" in result["warning"]
 
 
+def test_ollama_local_completion_and_opt_in(monkeypatch):
+    spec = ModelSpec(provider="ollama", model="qwen2.5:1.5b")
+    monkeypatch.delenv("AGENTGUARD_OLLAMA_MODELS", raising=False)
+    with pytest.raises(ProviderError, match="not enabled"):
+        ProviderClient().complete(spec, [], [])
+    monkeypatch.setenv("AGENTGUARD_OLLAMA_MODELS", spec.model)
+
+    def respond(request):
+        assert str(request.url) == "http://127.0.0.1:11434/v1/chat/completions"
+        body = json.loads(request.content)
+        assert body["max_tokens"] == 128
+        assert body["messages"][0]["content"] == "What is photosynthesis?"
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "finish_reason": "stop",
+                        "message": {"content": "Plants convert light into chemical energy."},
+                    }
+                ],
+                "usage": {"prompt_tokens": 10, "completion_tokens": 9},
+            },
+        )
+
+    result = ProviderClient(httpx.MockTransport(respond)).complete(
+        spec, [{"role": "user", "content": "What is photosynthesis?"}], [], 128
+    )
+    assert result.text == "Plants convert light into chemical energy."
+    assert result.input_tokens == 10 and result.output_tokens == 9
+    assert cost_of(spec, result) == 0
+
+
 def test_immutable_agent_and_prompt_versions(guard):
     p = guard.prompt_version("test", "v1", "Use evidence")
     a = guard.register_agent("support", "v1", prompt_id=p["id"])
